@@ -1,0 +1,171 @@
+---
+title: "**North Korea Human Rights Violations Map**"
+author: Jieun Byeon
+documentclass: article
+format: 
+  pdf:
+    citation_package: natbib
+    keep_tex: true
+    link-citations: true
+    fig_caption: true
+    latex_engine: xelatex
+    code-block-bg: light
+    code-block-border-left: "#31BAE9"
+    linkcolor: black
+    urlcolor: black
+    highlight-style: atom-one
+header-includes:
+  -  \usepackage{hyperref}
+  -  \usepackage{mathpazo}
+  -  \usepackage{bookmark}
+  -  \definecolor{light}{HTML}{EEEEEE}
+  -  \definecolor{highlight}{HTML}{9A2A2A}
+  -  \definecolor{dark}{HTML}{330033}
+  -  \usepackage{setspace}\singlespacing
+  -  \usepackage{fvextra}
+  -  \setmainfont[ItalicFont = {TeXGyrePagella-Italic}]{TeX Gyre Pagella}
+  -  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  -  \setmonofont{Fira Code}[Contextuals=Alternate]
+  -  \makeatletter
+  -  \renewcommand*\verbatim@nolig@list{}
+  -  \makeatother
+biblio-style: apsr
+geometry: margin=1in
+fontsize: 12pt
+link-citation: true
+indent: true
+---
+
+```{r, echo=FALSE, include=FALSE}
+rm(list = ls())      
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(tools)
+library(RColorBrewer)
+library(viridis)
+library(patchwork)
+library(scales)
+mycolors <- colorRampPalette(brewer.pal(name="Dark2", n = 8))(14)
+```
+
+```{r}
+setwd("/Users/jieun/Documents/lab/NK")
+NK_location <- readxl::read_xlsx("locations.xlsx") |> dplyr::select(-3)
+nk_prisoner <- read.csv("NKprison.csv")
+north_korea <- st_read("PRK_adm2.shp")
+```
+
+```{r}
+nk_prisoner <- nk_prisoner %>% 
+  filter(!is.na(Year.of.Violation)) %>% 
+  separate_rows(Year.of.Violation, sep = "\\|") %>%
+  filter(Year.of.Violation != "") %>%
+  filter(!is.na(Location.Where.the.Violation.Occurred)) %>% 
+  separate_rows(Location.Where.the.Violation.Occurred, sep = "\\|") %>%
+  filter(Location.Where.the.Violation.Occurred != "") %>%
+  filter(!is.na(Province.Where.the.Violation.Occurred)) %>% 
+  separate_rows(Province.Where.the.Violation.Occurred, sep = "\\|") %>%
+  filter(Province.Where.the.Violation.Occurred != "")
+nk_prisoner$Year.of.Violation <- as.numeric(as.character(nk_prisoner$Year.of.Violation))
+nk_prisoner <- nk_prisoner %>%
+  mutate(Location.Where.the.Violation.Occurred = trimws(Location.Where.the.Violation.Occurred))
+```
+
+```{r}
+location_category <- function(location) {
+  if (grepl("Detention Centre", location)) {
+    return("Detention Centre")
+  } else if (grepl("Holding Centre", location)) {
+    return("Holding Centre")
+  } else if (grepl("Labour Training Centre", location)) {
+    return("Labour Training Centre")
+  } else if (grepl("Re-education Camp", location)) {
+    return("Re-education Camp")
+  } else {
+    return("Others")
+  }
+}
+
+nk_prisoner <- nk_prisoner %>%
+  mutate(Location_Category = sapply(Location.Where.the.Violation.Occurred, location_category))
+```
+
+```{r, echo=FALSE}
+nk_prisoner <- nk_prisoner %>%
+  left_join(NK_location, by = c("Location.Where.the.Violation.Occurred"))
+
+nk_prisoner <- nk_prisoner %>%
+  separate(Locations, into = c("longitude", "latitude"), sep = ", ", remove = FALSE)
+
+nk_prisoner$longitude <- as.numeric(nk_prisoner$longitude)
+nk_prisoner$latitude <- as.numeric(nk_prisoner$latitude)
+
+
+nk_prisoner1 <-nk_prisoner %>%
+  select(Year.of.Violation, Violation.Type, Location.Where.the.Violation.Occurred, Province.Where.the.Violation.Occurred,latitude, longitude) |> 
+  as_tibble()
+```
+
+```{r}
+nk_prisoner1 <- nk_prisoner1 %>%
+  mutate(hyesanlat = 128.17439869849017) %>%
+  mutate(hyesanlon = 41.38720547481757) %>%
+  mutate(musanlat = 129.21475844653725) %>%
+  mutate(musanlon = 42.227913462073516) %>%
+  mutate(Hoeryonglat = 129.74103843445567) %>%
+  mutate(Hoeryonglon = 42.43111625965473) %>%
+  mutate(onsonglat = 129.9922125766018) %>%
+  mutate(onsonglon = 42.95313196462324) %>%
+  mutate(sinuijulat = 124.3982576675288) %>%
+  mutate(sinuijulon = 40.09820972649168)
+  
+```
+
+```{r}
+# Function to calculate distance using Haversine formula
+haversine_distance <- function(lat1, lon1, lat2, lon2) {
+  R <- 6371  # Earth radius in kilometers
+  dLat <- (lat2 - lat1) * pi / 180
+  dLon <- (lon2 - lon1) * pi / 180
+  a <- sin(dLat/2) * sin(dLat/2) + cos(lat1 * pi / 180) * cos(lat2 * pi / 180) * sin(dLon/2) * sin(dLon/2)
+  c <- 2 * atan2(sqrt(a), sqrt(1-a))
+  d <- R * c
+  return(d)  # Distance in kilometers
+}
+
+# Calculate distances for each violation location
+nk_prisoner1 <- nk_prisoner1 %>%
+  mutate(
+    distance_to_hyesan = haversine_distance(latitude, longitude, hyesanlat, hyesanlon),
+    distance_to_musan = haversine_distance(latitude, longitude, musanlat, musanlon),
+    distance_to_hoeryong = haversine_distance(latitude, longitude, Hoeryonglat, Hoeryonglon),
+    distance_to_onsong = haversine_distance(latitude, longitude, onsonglat, onsonglon),
+    distance_to_sinuiju = haversine_distance(latitude, longitude, sinuijulat, sinuijulon)
+  )
+
+nk_prisoner1 <- nk_prisoner1 %>%
+  mutate(
+    distance = pmin(distance_to_hyesan, distance_to_musan, distance_to_hoeryong, distance_to_onsong,  distance_to_sinuiju)
+  )
+
+nk_prisoner2 <-nk_prisoner1 %>%
+  select(Year.of.Violation, Violation.Type, Location.Where.the.Violation.Occurred, Province.Where.the.Violation.Occurred, distance) |> 
+  as_tibble() %>%
+  filter(Violation.Type %in% c("Forced Labour", 
+                          "Rape & Other Forms of Sexual Violence", 
+                          "Torture & CID", "Arbitrary Deprivation of Liberty", 
+                          "Denial of the Right to Life"))
+
+```
+
+```{r}
+nk_prosioner3 <- nk_prisoner2 %>%
+  group_by(Violation.Type, distance, Year.of.Violation) %>%
+  summarise(Frequency = n())
+fit <- lm(Frequency ~ distance, data=nk_prosioner3)
+stargazer(fit, type = "text")
+```
+
+
+

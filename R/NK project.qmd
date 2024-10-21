@@ -1,0 +1,450 @@
+---
+title: "**North Korea Human Rights Violations Map**"
+author: Jieun Byeon
+documentclass: article
+format: 
+  pdf:
+    citation_package: natbib
+    keep_tex: true
+    link-citations: true
+    fig_caption: true
+    latex_engine: xelatex
+    code-block-bg: light
+    code-block-border-left: "#31BAE9"
+    linkcolor: black
+    urlcolor: black
+    highlight-style: atom-one
+header-includes:
+  -  \usepackage{hyperref}
+  -  \usepackage{mathpazo}
+  -  \usepackage{bookmark}
+  -  \definecolor{light}{HTML}{EEEEEE}
+  -  \definecolor{highlight}{HTML}{9A2A2A}
+  -  \definecolor{dark}{HTML}{330033}
+  -  \usepackage{setspace}\singlespacing
+  -  \usepackage{fvextra}
+  -  \setmainfont[ItalicFont = {TeXGyrePagella-Italic}]{TeX Gyre Pagella}
+  -  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  -  \setmonofont{Fira Code}[Contextuals=Alternate]
+  -  \makeatletter
+  -  \renewcommand*\verbatim@nolig@list{}
+  -  \makeatother
+biblio-style: apsr
+geometry: margin=1in
+fontsize: 12pt
+link-citation: true
+indent: true
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list = ls())      
+library(tidyverse);library(sf);library(gridExtra);library(tools);library(RColorBrewer);library(viridis);library(patchwork);library(scales);library(knitr)
+mycolors <- colorRampPalette(brewer.pal(name="Dark2", n = 8))(14)
+# setwd("/Users/jieun/Documents/lab/NK")
+# dir_jb <- "/Users/jieun/Documents/lab/NK" 
+dir_hl <- "/Users/howardliu/Library/CloudStorage/OneDrive-UniversityofSouthCarolina/NK_project/Data/" 
+NK_location <- readxl::read_xlsx(paste0(dir_hl,"locations.xlsx")) |> dplyr::select(-3)
+nk_prisoner <- read.csv(paste0(dir_hl,"NKprison.csv"))
+nk_prisoner <- nk_prisoner %>%
+  mutate(rowid = row_number()) %>%
+  select(
+    rowid,
+    Year.of.Violation,
+    Violation.Type,
+    Location.Where.the.Violation.Occurred,
+    Province.Where.the.Violation.Occurred,
+    everything())
+north_korea <- st_read(paste0(dir_hl,"PRK_adm2.shp"))
+```
+
+```{r, echo=FALSE}
+nk_prisoner1 <- nk_prisoner %>%
+  # filter(!is.na(Year.of.Violation)) %>%
+  # separate_rows(Year.of.Violation, sep = "\\|") %>%
+  # filter(Year.of.Violation != "") %>%
+  filter(!is.na(Location.Where.the.Violation.Occurred)) %>%
+  separate_rows(Location.Where.the.Violation.Occurred, sep = "\\|") %>%
+  filter(Location.Where.the.Violation.Occurred != "")
+
+nk_prisoner1 <- nk_prisoner1 %>%
+  mutate(Location.Where.the.Violation.Occurred = trimws(Location.Where.the.Violation.Occurred))
+```
+
+```{r, echo=FALSE}
+nk_prisoner1 <- nk_prisoner1 %>%
+  left_join(NK_location, by = c("Location.Where.the.Violation.Occurred"))
+
+nk_prisoner1 <- nk_prisoner1 %>%
+  separate(Locations, into = c("longitude", "latitude"), sep = ", ", remove = FALSE)
+
+nk_prisoner1$longitude <- as.numeric(nk_prisoner1$longitude)
+nk_prisoner1$latitude <- as.numeric(nk_prisoner1$latitude)
+```
+
+```{r, echo=FALSE}
+#### Relabel the province name
+north_korea <- north_korea %>%
+  mutate(
+  NAME_kr = case_when(
+    NAME_1 %in% "Chagang-do" ~ "Chagang",
+    NAME_1 %in% "Hamgyŏng-bukto" ~ "North Hamgyong",
+    NAME_1 %in% "Hamgyŏng-namdo" ~ "South Hamgyong",
+    NAME_1 %in% "Hwanghae-bukto" ~ "North Hwanghae",
+    NAME_1 %in% "Hwanghae-namdo" ~ "South Hwanghae",
+    NAME_1 %in% "Kaesŏng" ~ "Kaesong",
+    NAME_1 %in% "Kangwŏn-do" ~ "Kangwon",
+    NAME_1 %in% "Kumgangsan" ~ "Kangwon",
+    NAME_1 %in% "P'yŏngan-bukto" ~ "North Pyongan",
+    NAME_1 %in% "P'yŏngan-namdo" ~ "South Pyongan",
+    NAME_1 %in% "P'yŏngyang" ~ "Pyongyang",
+    NAME_1 %in% "Rasŏn" ~ "Rason",
+    NAME_1 %in% "Ryanggang" ~ "Ryanggang",
+    NAME_1 %in% "Sinŭiju" ~ "North Pyongan",
+    T ~ NA_character_))
+north_korea <- north_korea %>%
+  mutate(
+    city_kr = gsub("[^[:alnum:] ]", "", NAME_2)
+  )
+
+nk_map_location <- 
+  north_korea %>% 
+  full_join(nk_prisoner1, by = c("city_kr"))
+```
+
+```{r, fig.width=6, fig.height=3, echo=FALSE, warning=FALSE, fig.cap= "Total Violations by Region"}
+NK <- nk_map_location %>% 
+  select(Year.of.Violation, Violation.Type, Location.Where.the.Violation.Occurred, NAME_kr, city_kr) %>%
+  filter(!is.na(Location.Where.the.Violation.Occurred))
+
+location_category <- function(location) {
+  if (grepl("Detention Centre", location)) {
+    return("Detention Centre")
+  } else if (grepl("Holding Centre", location)) {
+    return("Holding Centre")
+  } else if (grepl("Labour Training Centre", location)) {
+    return("Labour Training Centre")
+  } else if (grepl("Re-education Camp", location)) {
+    return("Re-education Camp")
+  } else {
+    return("Others")
+  }
+}
+
+NK <- NK %>%
+  mutate(Location_Category = sapply(Location.Where.the.Violation.Occurred, location_category))
+
+ggplot(data = NK, aes(x = NAME_kr)) +
+  geom_bar(fill = "gray") +
+  labs(x = "Region", y = "Frequency") +
+  scale_x_discrete(labels = label_wrap(10)) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(hjust = 0.5, size = 8))
+```
+
+
+```{r, fig.width=8, fig.height=12, echo=FALSE, warning=FALSE, fig.cap= "Violations Types and Frequency by Region"}
+NKr <- NK %>% 
+  filter(Violation.Type %in% c("Rape & Other Forms of Sexual Violence"))
+
+Fr <- ggplot(data = NKr, aes(x = NAME_kr)) +
+  geom_bar(fill = "gray") +
+  labs(title = "Rape", x = "Region", y = "Frequency") +
+  scale_x_discrete(labels = label_wrap(10)) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(hjust = 0.5, size = 8))
+
+NKt <- NK %>% 
+  filter(Violation.Type %in% c("Torture & CID"))
+
+Ft <- ggplot(data = NKt, aes(x = NAME_kr)) +
+  geom_bar(fill = "gray") +
+  labs(title = "Torture", x = "Region", y = "Frequency") +
+  scale_x_discrete(labels = label_wrap(10)) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(hjust = 0.5, size = 8))
+
+NKf <- NK %>% 
+  filter(Violation.Type %in% c("Forced Labour"))
+Ff <- ggplot(data = NKf, aes(x = NAME_kr)) +
+  geom_bar(fill = "gray") +
+  labs(title = "Forced Labour", x = "\nRegion", y = "Frequency\n") +
+  scale_x_discrete(labels = label_wrap(10)) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(hjust = 0.5, size = 8))
+Fr + Ft + Ff + patchwork::plot_layout(nrow = 3)
+```
+
+```{r,fig.width=8, fig.height=12, echo=FALSE, warning=FALSE, fig.cap= "Violations by Location"}
+NKr.1 <- NKr %>%
+  group_by(Location_Category) %>%
+  count()
+
+n1<- ggplot(data = NKr.1, aes(x = n, y = fct_rev(Location_Category))) +
+  geom_col() +
+  labs(title = "Rape", x = "Frequency", y = "Lacation") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, size = 8),
+        axis.text.y = element_text(hjust = 0.5, size = 8),
+    axis.title.x = element_text(size = 8), 
+    axis.title.y = element_text(size = 8))
+
+# Most of rapes and sexual violances happened in Detention Center and Holding center
+# The detention center for repatriation of North Korean defectors is primarily located in Onsong, Musan, Hoeryong, Sinuiju, and Hyesan.
+
+NKt.1 <- NKt %>%
+  group_by(Location_Category) %>%
+  count()
+
+# Torture happened in Detention Center, Holding Center, Labor Training Center, and Re-education camp (Almost all kinds of the locations)
+n2<- ggplot(data = NKt.1, aes(x = n, y = fct_rev(Location_Category))) +
+  geom_col() +
+  labs(title = "Torture", x = "Frequency", y = "Location") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5,size = 8),
+        axis.text.y = element_text(hjust = 0.5, size = 8),
+    axis.title.x = element_text(size = 8), 
+    axis.title.y = element_text(size = 8))
+
+# Forced Labor happened in Holding Center, Labor Training Center, and Re-education camp
+# Biggest Re-education camps: Hoeryong (North Hamgyong) Gaechon (South Pyongan)
+# Labor Training Centers: Gaechon (South Pyongan), Chungsan (South Pyongan), Hoeryong (North Hamgyong), Hyesan (Ryanggang), Musan (North Hamgyong), Onsong (North Hamgyong)
+
+# South Pyongan Province: Gaechon, Chungsan
+# Gaechon: The largest anthracite production area in North Korea.
+# Chungsan: Rich in resources such as iron, titanium, nickel, spodumene, ferroalloy, and molybdenum.
+
+NKf.1 <- NKf %>%
+  group_by(Location_Category) %>%
+  count()
+
+n3 <- ggplot(data = NKf.1, aes(x = n, y = fct_rev(Location_Category))) +
+  geom_col() +
+  labs(title = "Forced Labor", x = "Frequency", y = "Location") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5,size = 8),
+        axis.text.y = element_text(hjust = 0.5, size = 8),
+    axis.title.x = element_text(size = 8), 
+    axis.title.y = element_text(size = 8))
+
+n1 + n2 + n3 + patchwork::plot_layout(nrow = 3)
+#ggsave("1.png", width = 30, height = 20, units = "in")
+```
+
+```{r, echo=FALSE}
+prison_period1 <- nk_map_location %>%
+  select(city_kr, latitude, longitude) %>%
+  as_tibble()
+prison_period1$geometry <- NULL
+
+sum_prison_period1 <- prison_period1 %>% 
+  drop_na() %>% 
+  group_by(city_kr, latitude, longitude) %>%
+  count()
+
+sum_prison_period1 <- st_as_sf(sum_prison_period1, coords = c("latitude", "longitude"), 
+         agr = "constant",
+         crs = 4326)
+
+int <- sf::st_intersects(north_korea, sum_prison_period1)
+
+joined_north_korea1 <- north_korea |> st_join(sum_prison_period1) 
+
+sum_joined_north_korea2 <- joined_north_korea1 |> # HL: can't run the code here.
+  drop_na(city_kr.x) |> 
+  group_by(city_kr.x) |>
+  summarize(n = sum(n)) 
+
+my_breaks <- c(seq(0, 50, 10))
+quantile(sum_joined_north_korea2$n, probs = c(seq(0, 1, 0.2)), na.rm = T)
+
+sum_joined_north_korea2 <- sum_joined_north_korea2 %>% 
+  mutate(n_agg = case_when(
+    n <  50 ~ 1L,
+    n >= 50 & n < 100 ~ 2L,
+    n >= 100 & n < 200 ~ 3L,
+    n >= 200 & n < 300 ~ 4L,
+    n >= 300 & n < 400 ~ 5L,
+    n >= 400 & n < 500 ~ 6L,
+    n >= 500 & n < 1000 ~ 7L,
+    n >= 1000 ~ 8L,
+    T ~ NA_integer_
+  ))
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=6, fig.height=6, fig.cap= "Frequency of Violations"}
+north_korea |>
+  ggplot() +
+  geom_sf(fill = "white") +
+  geom_sf(
+    data = sum_joined_north_korea2,
+    aes(geometry = geometry, fill = n_agg),
+    alpha = 0.9, show.legend = TRUE, stat = "sf_coordinates") +
+  scale_fill_viridis(
+    breaks = c(1, 2, 3, 4, 5, 6, 7, 8),
+    limits = c(1, 8),
+    labels = c("Under 50", "50-100", "100-200", "200-300", 
+               "300-400", "400-500", "500-1000", "Over 1000"),
+    direction = -1) +
+  ggrepel::geom_label_repel(size = 3,
+    data = sum_joined_north_korea2,
+    aes(geometry = geometry, label = n),
+    max.overlaps=Inf,
+    show.legend = F,
+    stat = "sf_coordinates") +
+  theme_void() + theme(legend.title = element_blank(), plot.subtitle = element_text(size = 15))
+#ggsave("total.png", width = 20, height = 20, units = "in")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+prison_period <- nk_map_location %>%
+  select(Location.Where.the.Violation.Occurred,Violation.Type, latitude, longitude) %>%
+  as_tibble()
+prison_period$geometry <- NULL
+
+sum_prison_period <- prison_period %>% 
+  drop_na() %>% 
+  group_by(Location.Where.the.Violation.Occurred, Violation.Type, latitude, longitude) %>%
+  count()
+
+sum_prison_period <- st_as_sf(sum_prison_period, coords = c("latitude", "longitude"), 
+         agr = "constant",
+         crs = 4326)
+
+int <- sf::st_intersects(north_korea, sum_prison_period)
+
+joined_north_korea <- north_korea |> st_join(sum_prison_period) 
+
+sum_joined_north_korea <- joined_north_korea |> 
+  drop_na(Violation.Type, city_kr) |> 
+  group_by(Violation.Type, city_kr) |>
+  summarize(n = sum(n)) 
+
+my_breaks <- c(seq(0, 50, 10))
+quantile(sum_joined_north_korea$n, probs = c(seq(0, 1, 0.2)), na.rm = T)
+sum_joined_north_korea1 <- sum_joined_north_korea %>% 
+  mutate(n_agg = case_when(
+    n <  10 ~ 1L,
+    n >= 10 & n < 25 ~ 2L,
+    n >= 25 & n < 50 ~ 3L,
+    n >= 50 & n < 75 ~ 4L,
+    n >= 75 & n < 100 ~ 5L,
+    n >= 100 & n < 200 ~ 6L,
+    n >= 200 & n < 300 ~ 7L,
+    n >= 300 ~ 8L,
+    T ~ NA_integer_
+  ))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+i1<- north_korea |> 
+  ggplot() +
+  geom_sf(fill = "white") + 
+  geom_sf(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Forced Labour"),
+    aes(geometry = geometry, fill = n_agg),
+    alpha = 0.9, show.legend = TRUE, stat = "sf_coordinates") +
+  scale_fill_viridis(
+    breaks = c(1, 2, 3, 4, 5, 6, 7, 8),
+    limits = c(1, 8),
+    labels = c("Under 10", "10-25", "25-50", "50-75", 
+               "75-100", "100-200", "200-300", "Over 300"),
+    direction = -1) +
+  ggrepel::geom_label_repel(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Forced Labour"),
+    aes(geometry = geometry, label = n),
+    max.overlaps=Inf,
+    show.legend = F,
+    stat = "sf_coordinates") +
+  theme_void() + theme(legend.title = element_blank(), plot.subtitle = element_text(size = 10))
+
+i2<- north_korea |> 
+  ggplot() +
+  geom_sf(fill = "white") + 
+  geom_sf(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Torture & CID"),
+    aes(geometry = geometry, fill = n_agg),
+    alpha = 0.9, show.legend = TRUE, stat = "sf_coordinates") +
+  scale_fill_viridis(
+    breaks = c(1, 2, 3, 4, 5, 6, 7, 8),
+    limits = c(1, 8),
+    labels = c("Under 10", "10-25", "25-50", "50-75", 
+               "75-100", "100-200", "200-300", "Over 300"),
+    direction = -1) +
+  ggrepel::geom_label_repel(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Torture & CID"),
+    aes(geometry = geometry, label = n),
+    max.overlaps=Inf,
+    show.legend = F,
+    stat = "sf_coordinates")+
+  theme_void() + theme(legend.title = element_blank(), plot.subtitle = element_text(size = 10))
+
+i3<- north_korea |> 
+  ggplot() +
+  geom_sf(fill = "white") + 
+  geom_sf(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Rape & Other Forms of Sexual Violence"),
+    aes(geometry = geometry, fill = n_agg),
+    alpha = 0.9, show.legend = TRUE, stat = "sf_coordinates") +
+  scale_fill_viridis(
+    breaks = c(1, 2, 3, 4, 5, 6, 7, 8),
+    limits = c(1, 8),
+    labels = c("Under 10", "10-25", "25-50", "50-75", 
+               "75-100", "100-200", "200-300", "Over 300"),
+    direction = -1) +
+  ggrepel::geom_label_repel(
+    data = sum_joined_north_korea1 |> 
+      dplyr::filter(Violation.Type %in% "Rape & Other Forms of Sexual Violence"),
+    aes(geometry = geometry, label = n),
+    max.overlaps=Inf,
+    show.legend = F,
+    stat = "sf_coordinates") +
+  theme_void() + theme(legend.title = element_blank(), plot.subtitle = element_text(size = 15))
+
+i4 <- north_korea |>
+  ggplot() +
+  geom_sf(fill = "white") +
+  geom_sf(
+    data = sum_joined_north_korea1 |>
+      dplyr::filter(Violation.Type %in% "Denial of the Right to Life"),
+    aes(geometry = geometry, fill = n_agg),
+    alpha = 0.9, show.legend = TRUE, stat = "sf_coordinates") +
+  scale_fill_viridis(
+    breaks = c(1, 2, 3, 4, 5, 6, 7, 8),
+    limits = c(1, 8),
+    labels = c("Under 10", "10-25", "25-50", "50-75", 
+               "75-100", "100-200", "200-300", "Over 300"),
+    direction = -1) +
+  ggrepel::geom_label_repel(
+    data = sum_joined_north_korea1 |>
+      dplyr::filter(Violation.Type %in% "Denial of the Right to Life"),
+    aes(geometry = geometry, label = n),
+    max.overlaps=Inf,
+    show.legend = F,
+    stat = "sf_coordinates"
+  ) + labs(subtitle = "Violation Type: Denial of the Right to Life") +
+  theme_void() + theme(legend.title = element_blank(), plot.subtitle = element_text(size = 15))
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=6, fig.height=6, fig.cap= "Violation Type: Forced Labour"}
+i1
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=6, fig.height=6, fig.cap= "Violation Type: Torture & CID"}
+i2
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=6, fig.height=6, fig.cap= "Violation Type: Rape & Sexual Violence"}
+i3
+#i1 + i2 + i3 + i4 + patchwork::plot_layout(ncol = 2, nrow = 2)
+#ggsave("i.png", width = 30, height = 30, units = "in")
+```
+
