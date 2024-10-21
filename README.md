@@ -15,7 +15,7 @@ The data used in this project is sourced from the NKPD, a comprehensive database
 
 ## Project Structure
 
-- `data/`: Contains the raw and pre-processed datasets.
+- `Data/`: Contains the raw and pre-processed datasets.
 - `R/`: R scripts for data processing, network analysis, and visualizations.
 - `Outputs/`: Stores outputs from data and R, such as figures, tables, etc.
 - `README.md`: This document.
