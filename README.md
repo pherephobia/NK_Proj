@@ -16,7 +16,8 @@ The data used in this project is sourced from the NKPD, a comprehensive database
 ## Project Structure
 
 - `data/`: Contains the raw and pre-processed datasets.
-- `scripts/`: R scripts for data processing, network analysis, and visualizations.
+- `R/`: R scripts for data processing, network analysis, and visualizations.
+- `Outputs/`: Stores outputs from data and R, such as figures, tables, etc.
 - `README.md`: This document.
 
 ## Key Findings
@@ -30,11 +31,11 @@ The data used in this project is sourced from the NKPD, a comprehensive database
    ```bash
    git clone https://github.com/your-username/nk-detainees-human-rights.git
    ```
-
+   
 2. Open RStudio or run R in the terminal and install the required packages by running:
-  ```r
-  install.packages(c("dplyr", "tidyr", "ggplot2", "igraph", "readr"))
-  ```
+   ```r
+   install.packages(c("dplyr", "tidyr", "ggplot2", "igraph", "readr"))
+   ```
 
 Run the R scripts in the scripts/ directory to replicate the analysis.
 
