@@ -1,16 +1,12 @@
-length(unique(NKPD_detainees$Title))
-length(unique(detainees_perpetrator_viol_wide$det_id))
-length(unique(detainees_perpetrator_viol_wide$perp_id))
-names(perpetrators_cl)
-library(tidyverse)
-detainees_perpetrator_viol_wide |> 
-  mutate(det_start_re = lubridate::dmy(det_start),
-         det_end_re = lubridate::dmy(det_end)) |> 
-  dplyr::select(det_start_re, det_end_re, everything()) |> 
-  mutate(diff = det_end_re - det_start_re)
-detainees_perpetrator_viol_wide |> 
-  dplyr::select(det_id, perp_id, det_start, det_end, det_related_penal_facilities, perp_related_penal_facility) ->
-  test
+## Project: NK Prison Database Analysis
+## Log:
+##    - 2024-10-02 Make dyads of detainees and peerpetrators
+##    - 2024-10-08 Make wide to long for other variables (e.g., violation type)
+
+## Load packages in use
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(janitor, lubridate, sf, gridExtra, tools, 
+               viridis, patchwork, scales, knitr, igraph, tidyverse)
 
 perpetrators_cl |> 
   dplyr::select(perp_id, perp_related_penal_facility) |> 
@@ -28,50 +24,34 @@ perp_A
 
 perp_B <- perp_A
 
-perp_A |> full_join(perp_B,
-                    by = "facility") |> 
-  rowwise() |> 
-  dplyr::filter(!perp_id.x %in% perp_id.y) |> 
-  ungroup() |> 
-  dplyr::filter(perp_id.x > perp_id.y) |> 
-  rename(perpA_id = perp_id.x, perpB_id = perp_id.y) ->
-  dyads_perp_institute
+perp_A <- perp_A |> rename(perpA_id = perp_id)
+perp_B <- perp_B |> rename(perpB_id = perp_id)
 
-dyads_perp_institute |> dplyr::select(perpA_id, perpB_id, facility) |> 
-  arrange(perpA_id, perpB_id)
+merged_data <- perp_A %>%
+  inner_join(perp_B, by = "facility") %>%
+  filter(perpA_id != perpB_id)
 
-# Data preparation
-net_perp <- dyads_perp_institute |> dplyr::select(-facility)
-net_perp |> distinct() -> net_perp
+library(igraph)
+library(ggraph)
+library(tidygraph)
+# Create the graph from dyadic data (no facility coloring)
+graph_data <- merged_data %>%
+  select(perpA_id, perpB_id)  # Only select perpetrator pairs
 
-# Check the number of unique nodes
-num_nodes <- length(unique(c(net_perp$perpA_id, net_perp$perpB_id)))
+# Create an igraph object (undirected graph)
+g <- graph_from_data_frame(d = graph_data, directed = FALSE)
 
-# Create a network object
-net <- network(net_perp, directed = FALSE)
+# Step 2: Use community detection to find clusters (using Louvain algorithm)
+communities <- cluster_louvain(g)
 
-# Ensure the facility column is correctly matched with the nodes in the network
-# If 'facility' refers to the nodes, ensure each node has one facility assigned
-
-# Assuming dyads_perp_institute still has the facility column:
-facility_data <- dyads_perp_institute |> 
-  dplyr::filter(perpA_id %in% unique(c(net_perp$perpA_id, net_perp$perpB_id))) |> 
-  dplyr::select(facility) |> distinct()
-
-# If the facility data doesn't directly map to the nodes, you might need to match it explicitly.
-# Ensure `facility_data` corresponds to the vertices of `net`.
-
-# Assign the 'facility' attribute to nodes
-set.vertex.attribute(net, "facility", facility_data$facility)
-
-# Plotting the network with ggnet2
-ggnet2(net, 
-       color = "facility"),        # Color nodes by facility
-       palette = "Set1",          # Color palette for distinct groups
-       alpha = 0.3,
-       #edge.color = c("color", "grey50"), # Edge color, adjust as necessary
-       size = 3,                  # Node size
-       #label = TRUE,              # Add labels (if needed)
-       #label.size = 3,            # Label size
-       #label.color = "black",     # Label color
-       edge.size = 0.5)           # Edge thickness
+# Add community membership as a vertex attribute
+V(g)$community <- membership(communities)
+# Visualize the graph with ggraph, coloring nodes by facility
+# Visualize the graph with ggraph
+ggraph(g, layout = "fr") +  # Fruchterman-Reingold layout for better clustering
+  geom_edge_link(colour='#cfcbc4', edge_width=1, show.legend = F) +  # Transparent edges
+  geom_node_point(aes(color = factor(community)), size = 3, show.legend = F) +  # Color nodes by community
+  geom_node_text(aes(label = name), repel = TRUE, size = 2) +  # Labels with repulsion to avoid overlap
+  theme_void() +  # Clean background
+  viridis::scale_color_viridis(discrete = T)+ 
+  theme(legend.position = "right")  # Show legend for community
