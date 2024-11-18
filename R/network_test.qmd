@@ -1,0 +1,145 @@
+---
+title: "Network Analysis"
+author: Jieun Byeon
+documentclass: article
+format: 
+  pdf:
+    citation_package: natbib
+    keep_tex: true
+    link-citations: true
+    fig_caption: true
+    latex_engine: xelatex
+    code-block-bg: light
+    code-block-border-left: "#31BAE9"
+    linkcolor: black
+    urlcolor: black
+    highlight-style: atom-one
+header-includes:
+  -  \usepackage{hyperref}
+  -  \usepackage{mathpazo}
+  -  \usepackage{bookmark}
+  -  \definecolor{light}{HTML}{EEEEEE}
+  -  \definecolor{highlight}{HTML}{9A2A2A}
+  -  \definecolor{dark}{HTML}{330033}
+  -  \usepackage{setspace}\singlespacing
+  -  \usepackage{fvextra}
+  -  \setmainfont[ItalicFont = {TeXGyrePagella-Italic}]{TeX Gyre Pagella}
+  -  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  -  \setmonofont{Fira Code}[Contextuals=Alternate]
+  -  \makeatletter
+  -  \renewcommand*\verbatim@nolig@list{}
+  -  \makeatother
+biblio-style: apsr
+geometry: margin=1in
+fontsize: 12pt
+link-citation: true
+indent: true
+---
+
+```{r, echo=FALSE, include=FALSE}
+rm(list = ls())      
+library(ggplot2);library(stargazer);library(tidyverse);library(knitr);library(gridExtra);
+library(kableExtra);library(ggeffects);library(patchwork); library(haven);library(lubridate);library(survminer)
+library(sf);library(gridExtra);library(tools);library(RColorBrewer);library(viridis);library(scales)
+library(ggpubr);library(igraph);library(network);library(GGally);library(sna);library(igraph);library(purrr)
+library(dplyr);library(tidyr)
+
+pacman::p_load(janitor, lubridate, tidyverse)
+
+setwd("/Users/jieun/Documents/NK_Proj")
+perpetrators <- read_csv("Data/NKPD_perpetrators.csv") |> janitor::clean_names()
+detainees_perpetrator <- readRDS("Data/sp_analysis_data/detainees_perpetrator.rds")
+```
+
+```{r}
+### perpetrator data ---------------
+detainees_perpetrator_cl <- detainees_perpetrator %>%
+  dplyr::select(
+    id = perp_id,
+    syear = det_start_year,
+    eyear = det_end_year,
+    facility = perp_related_penal_facility,
+    perp_nationality,
+    related_detainee = det_id,
+    perp_organisational_affiliation,
+    perp_age_range,
+    perp_rank,
+    perp_affiliated_province,
+    perp_type_of_penal_facility
+  ) %>%
+  separate_rows(facility, sep = "\\|") %>%
+  mutate(
+    id = gsub("perp-", "", id),
+    time = purrr::map2(syear, eyear, ~ seq(.x, .y))
+  ) %>%
+  dplyr::select(id, time, facility, everything())
+
+dyadsedge <- detainees_perpetrator_cl %>%
+  unnest(time) %>% 
+  group_by(facility, time) %>% 
+  summarise(ids = list(id), .groups = "drop") %>% 
+  filter(lengths(ids) > 1) %>%
+  mutate(dyads = map(ids, ~ combn(.x, 2, simplify = FALSE))) %>%
+  unnest(dyads) %>%
+  unnest_wider(dyads, names_sep = "_") %>%
+  rename(from = dyads_1, to = dyads_2) %>%
+  filter(from != to) %>%
+  dplyr::select(from, to, time, facility)
+
+dyads <- dyadsedge %>% 
+  group_by(from, to, facility) %>% 
+  summarise(
+    weight = n(),
+    time_range = paste0(min(time), "-", max(time)), 
+    .groups = "drop"
+  ) %>% 
+  arrange(facility, from, to) # Arrange for better readability
+
+head(dyads, 5)
+```
+
+```{r,  fig.width=15, fig.height=15}
+g1 <- graph_from_edgelist(dyadsedge %>% dplyr::select(from, to) %>%
+                              as.matrix(), directed = FALSE)
+
+plot(g1,edge.arrow.size=.5, vertex.color="gold", vertex.size=1, 
+     vertex.frame.color="gray", vertex.label.color="black", 
+     vertex.label.cex= 1, vertex.label.dist=2, edge.curved=0.2)
+```
+
+
+```{r, fig.width=8, fig.height=8}
+g2 <- graph_from_data_frame(d = dyads, directed = FALSE)
+
+# E(g2)$width=E(g2)$weight%>%log()/2
+# plot(g2, edge.arrow.size=.5, vertex.color="gold", vertex.size=1,
+#      vertex.frame.color="gray", vertex.label.color="black",
+#      vertex.label.cex=.5, vertex.label.dist=2, edge.curved=0.5)
+ecol=E(g2)$facility
+ecol[!(ecol %in% c(
+  "Hamhung Re-education Camp Songwon-ri Branch",
+  "Hyesan City MPS Detention Centre",
+  "Ryanggang Provincial MPS Holding Centre",
+  "Hamhung No.55 Labour Training Camp",
+  "Onsong County MSS Detention Centre"
+))] = "gray50"
+ecol[ecol=="Hamhung Re-education Camp Songwon-ri Branch"]= "#FAB9ACFF"
+ecol[ecol=="Hyesan City MPS Detention Centre"]="#7BBC53FF"
+ecol[ecol=="Ryanggang Provincial MPS Holding Centre"]="#DE6736FF"
+ecol[ecol=="Hamhung No.55 Labour Training Camp"]="#67C1ECFF"
+ecol[ecol=="Onsong County MSS Detention Centre"]="#E6B90DFF"
+E(g2)$color=ecol
+E(g2)$width=E(g2)$weight%>%log()/2
+plot(g2, edge.arrow.size=.5, vertex.color="black", vertex.size=1, edge.size = 3, edge.color=ecol,
+     vertex.frame.color="gray", vertex.label.color="black",
+     vertex.label.cex=.5, vertex.label.dist=1, edge.curved=0.5)
+```
+
+```{r}
+
+```
+
+
+
+
+
