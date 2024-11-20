@@ -38,11 +38,7 @@ indent: true
 
 ```{r, echo=FALSE, include=FALSE}
 rm(list = ls())      
-library(ggplot2);library(stargazer);library(tidyverse);library(knitr);library(gridExtra);
-library(kableExtra);library(ggeffects);library(patchwork); library(haven);library(lubridate);library(survminer)
-library(sf);library(gridExtra);library(tools);library(RColorBrewer);library(viridis);library(scales)
-library(ggpubr);library(igraph);library(network);library(GGally);library(sna);library(igraph);library(purrr)
-library(dplyr);library(tidyr)
+library(igraph);library(dplyr)
 
 pacman::p_load(janitor, lubridate, tidyverse)
 
@@ -94,49 +90,46 @@ dyads <- dyadsedge %>%
     .groups = "drop"
   ) %>% 
   arrange(facility, from, to) # Arrange for better readability
-
-head(dyads, 5)
-```
-
-```{r,  fig.width=15, fig.height=15}
-g1 <- graph_from_edgelist(dyadsedge %>% dplyr::select(from, to) %>%
-                              as.matrix(), directed = FALSE)
-
-plot(g1,edge.arrow.size=.5, vertex.color="gold", vertex.size=1, 
-     vertex.frame.color="gray", vertex.label.color="black", 
-     vertex.label.cex= 1, vertex.label.dist=2, edge.curved=0.2)
-```
-
-
-```{r, fig.width=8, fig.height=8}
-g2 <- graph_from_data_frame(d = dyads, directed = FALSE)
-
-# E(g2)$width=E(g2)$weight%>%log()/2
-# plot(g2, edge.arrow.size=.5, vertex.color="gold", vertex.size=1,
-#      vertex.frame.color="gray", vertex.label.color="black",
-#      vertex.label.cex=.5, vertex.label.dist=2, edge.curved=0.5)
-ecol=E(g2)$facility
-ecol[!(ecol %in% c(
-  "Hamhung Re-education Camp Songwon-ri Branch",
-  "Hyesan City MPS Detention Centre",
-  "Ryanggang Provincial MPS Holding Centre",
-  "Hamhung No.55 Labour Training Camp",
-  "Onsong County MSS Detention Centre"
-))] = "gray50"
-ecol[ecol=="Hamhung Re-education Camp Songwon-ri Branch"]= "#FAB9ACFF"
-ecol[ecol=="Hyesan City MPS Detention Centre"]="#7BBC53FF"
-ecol[ecol=="Ryanggang Provincial MPS Holding Centre"]="#DE6736FF"
-ecol[ecol=="Hamhung No.55 Labour Training Camp"]="#67C1ECFF"
-ecol[ecol=="Onsong County MSS Detention Centre"]="#E6B90DFF"
-E(g2)$color=ecol
-E(g2)$width=E(g2)$weight%>%log()/2
-plot(g2, edge.arrow.size=.5, vertex.color="black", vertex.size=1, edge.size = 3, edge.color=ecol,
-     vertex.frame.color="gray", vertex.label.color="black",
-     vertex.label.cex=.5, vertex.label.dist=1, edge.curved=0.5)
 ```
 
 ```{r}
+head(dyadsedge, 10)
+```
 
+```{r}
+head(dyads, 10)
+```
+
+```{r, fig.width=10, fig.height=10}
+g2 <- graph_from_data_frame(d = dyads, directed = FALSE)
+
+vertex_degree <- igraph::degree(g2)
+
+E(g2)$width <- log(E(g2)$weight) / 2
+V(g2)$label <- ifelse(vertex_degree > 50, V(g2)$name, NA)
+V(g2)$size=degree(g2)%>%log()/2
+V(g2)$color <- ifelse(
+  vertex_degree < 10, 
+  "gold", 
+  ifelse(
+    vertex_degree < 25, 
+    "#7BBC53FF", 
+    ifelse(
+      vertex_degree < 50,
+      "#DE6736FF",
+      "#67C1ECFF"
+    )
+  )
+)
+
+plot(g2,
+     edge.arrow.size = 0.5,
+     vertex.color = V(g2)$color,
+     vertex.frame.color = "gray",
+     vertex.label.color = "black",
+     vertex.label.cex = .5,
+     vertex.label.dist = 3,
+     edge.curved = 0.5)
 ```
 
 
