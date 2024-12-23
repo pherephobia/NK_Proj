@@ -1,0 +1,138 @@
+---
+title: "Network Analysis"
+author: Jieun Byeon
+documentclass: article
+format: 
+  pdf:
+    citation_package: natbib
+    keep_tex: true
+    link-citations: true
+    fig_caption: true
+    latex_engine: xelatex
+    code-block-bg: light
+    code-block-border-left: "#31BAE9"
+    linkcolor: black
+    urlcolor: black
+    highlight-style: atom-one
+header-includes:
+  -  \usepackage{hyperref}
+  -  \usepackage{mathpazo}
+  -  \usepackage{bookmark}
+  -  \definecolor{light}{HTML}{EEEEEE}
+  -  \definecolor{highlight}{HTML}{9A2A2A}
+  -  \definecolor{dark}{HTML}{330033}
+  -  \usepackage{setspace}\singlespacing
+  -  \usepackage{fvextra}
+  -  \setmainfont[ItalicFont = {TeXGyrePagella-Italic}]{TeX Gyre Pagella}
+  -  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  -  \setmonofont{Fira Code}[Contextuals=Alternate]
+  -  \makeatletter
+  -  \renewcommand*\verbatim@nolig@list{}
+  -  \makeatother
+biblio-style: apsr
+geometry: margin=1in
+fontsize: 12pt
+link-citation: true
+indent: true
+---
+
+```{r, echo=FALSE, include=FALSE}
+rm(list = ls())      
+library(igraph);library(dplyr)
+
+pacman::p_load(janitor, lubridate, tidyverse)
+
+#setwd("/Users/jieun/Documents/NK_Proj")
+perpetrators <- read_csv("../Data/NKPD_perpetrators.csv") |> janitor::clean_names()
+detainees_perpetrator <- readRDS("../Data/sp_analysis_data/detainees_perpetrator.rds")
+```
+
+```{r}
+### perpetrator data ---------------
+detainees_perpetrator_cl <- detainees_perpetrator %>%
+  dplyr::select(
+    id = perp_id,
+    syear = det_start_year,
+    eyear = det_end_year,
+    facility = perp_related_penal_facility,
+    perp_nationality,
+    related_detainee = det_id,
+    perp_organisational_affiliation,
+    perp_age_range,
+    perp_rank,
+    perp_affiliated_province,
+    perp_type_of_penal_facility
+  ) %>%
+  separate_rows(facility, sep = "\\|") %>%
+  mutate(
+    id = gsub("perp-", "", id),
+    time = purrr::map2(syear, eyear, ~ seq(.x, .y))
+  ) %>%
+  dplyr::select(id, time, facility, everything())
+
+dyadsedge <- detainees_perpetrator_cl %>%
+  unnest(time) %>% 
+  group_by(facility, time) %>% 
+  summarise(ids = list(id), .groups = "drop") %>% 
+  filter(lengths(ids) > 1) %>%
+  mutate(dyads = map(ids, ~ combn(.x, 2, simplify = FALSE))) %>%
+  unnest(dyads) %>%
+  unnest_wider(dyads, names_sep = "_") %>%
+  rename(from = dyads_1, to = dyads_2) %>%
+  filter(from != to) %>%
+  dplyr::select(from, to, time, facility)
+
+dyads <- dyadsedge %>% 
+  group_by(from, to, facility) %>% 
+  summarise(
+    weight = n(),
+    time_range = paste0(min(time), "-", max(time)), 
+    .groups = "drop"
+  ) %>% 
+  arrange(facility, from, to) # Arrange for better readability
+```
+
+```{r}
+head(dyadsedge, 10)
+```
+
+```{r}
+head(dyads, 10)
+```
+
+```{r, fig.width=10, fig.height=10}
+g2 <- graph_from_data_frame(d = dyads, directed = T)
+
+vertex_degree <- igraph::degree(g2)
+
+E(g2)$width <- log(E(g2)$weight) / 2
+V(g2)$label <- ifelse(vertex_degree > 21, V(g2)$name, NA)
+V(g2)$size=degree(g2)%>%log()/2
+V(g2)$color <- ifelse(
+  vertex_degree <= 4, 
+  "grey80", 
+  ifelse(
+    vertex_degree <= 15, 
+    "gold", 
+    ifelse(
+      vertex_degree <= 21,
+      "#7BBC53FF",
+      "#DE6736FF"
+    )
+  )
+)
+
+plot(g2,
+     edge.arrow.size = 0.2,
+     vertex.color = V(g2)$color,
+     vertex.frame.color = "gray",
+     vertex.label.color = "black",
+     vertex.label.cex = .5,
+     vertex.label.dist = 3,
+     edge.curved = 0.5)
+```
+
+
+
+
+
